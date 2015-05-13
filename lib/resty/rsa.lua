@@ -24,6 +24,16 @@ local PADDING = {
 }
 _M.PADDING = PADDING
 
+local ALGORITHM = {
+    NID_sha256 = 672
+}
+_M.ALGORITHM = ALGORITHM
+
+local LENGTH = {
+    SHA256_DIGEST_LENGTH = 32
+}
+_M.LENGTH = LENGTH
+
 
 ffi.cdef[[
 typedef struct bio_st BIO;
@@ -49,6 +59,15 @@ int	RSA_private_decrypt(int flen, const unsigned char *from,
 
 unsigned long ERR_get_error(void);
 const char * ERR_reason_error_string(unsigned long e);
+
+int RSA_sign(int type, const unsigned char *m, unsigned int m_length,
+		unsigned char *sigret, unsigned int *siglen, RSA *rsa);
+int RSA_verify(int type, const unsigned char *m, unsigned int m_length,
+		const unsigned char *sigbuf, unsigned int siglen, RSA *rsa);
+
+unsigned char *SHA256(const unsigned char *d, size_t n,
+		unsigned char *md);
+
 ]]
 
 
@@ -127,5 +146,44 @@ function _M.encrypt(self, str)
     return ffi_str(buf, len)
 end
 
+function _M.sign(self, algorithm, str)
+    local rsa = self.private_rsa
+    if not rsa then
+        return nil, "not inited for sign"
+    end
+
+    local buf = ffi_new("unsigned char[?]", self.size)
+    local len = ffi_new("unsigned int[?]", 1)
+    local ret = C.RSA_sign(algorithm, str, #str, buf, len, rsa)
+    if ret ~= 1 then
+        return err()
+    end
+    return ffi_str(buf, len[0])
+end
+
+function _M.verify(self, algorithm, str, sig)
+    local rsa = self.public_rsa
+    if not rsa then
+        return nil, "not inited for verify"
+    end
+
+    local len = 0
+    local ret = C.RSA_verify(algorithm, str, #str, sig, #sig, rsa)
+    if ret ~= 1 then
+        _, msg = err()
+        if not msg then
+            msg = "Verification failed"
+        end
+        return false, msg
+    end
+
+    return true, nil
+end
+
+function _M.SHA256(self,  str)
+    local buf = ffi_new("unsigned char[?]", self.LENGTH.SHA256_DIGEST_LENGTH)
+    C.SHA256(str, #str, buf)
+    return ffi_str(buf, self.LENGTH.SHA256_DIGEST_LENGTH)
+end
 
 return _M
